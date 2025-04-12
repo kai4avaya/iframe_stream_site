@@ -5,6 +5,34 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Browser Viewer</title>
+    <script>
+        // Domain verification - runs immediately
+        (function() {
+            const allowedDomains = [
+                'https://customdemo.experience.avaya.com',
+                'http://localhost',
+                'http://127.0.0.1'
+            ];
+
+            function isAllowedDomain() {
+                if (window.self === window.top) {
+                    // Not in an iframe, allow
+                    return true;
+                }
+
+                try {
+                    const parentDomain = document.referrer;
+                    return allowedDomains.some(domain => parentDomain.startsWith(domain));
+                } catch (e) {
+                    return false;
+                }
+            }
+
+            if (!isAllowedDomain()) {
+                window.top.location = window.self.location;
+            }
+        })();
+    </script>
     <style>
         body {
             margin: 0;
@@ -86,6 +114,35 @@
     </div>
 
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script>
+        // Security check on load
+        document.addEventListener('DOMContentLoaded', () => {
+            const allowedDomains = [
+                'https://customdemo.experience.avaya.com',
+                'http://localhost',
+                'http://127.0.0.1'
+            ];
+
+            function checkDomainAccess() {
+                if (window.self === window.top) {
+                    return true; // Not in an iframe
+                }
+
+                try {
+                    const parentOrigin = new URL(document.referrer).origin;
+                    return allowedDomains.includes(parentOrigin);
+                } catch (e) {
+                    console.error('Domain access check failed:', e);
+                    return false;
+                }
+            }
+
+            if (!checkDomainAccess()) {
+                document.body.innerHTML = '<h1>Access Denied</h1><p>This content cannot be displayed in an iframe from your domain.</p>';
+                return;
+            }
+        });
+    </script>
     <script>
         let socket = null;
         const canvas = document.getElementById('browserCanvas');
