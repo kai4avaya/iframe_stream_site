@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Browser Viewer</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        #controls {
+            padding: 10px;
+            background: #f0f0f0;
+        }
+
+        #serverControls {
+            margin-bottom: 10px;
+        }
+
+        #viewer {
+            flex: 1;
+            position: relative;
+            overflow-x: hidden;
+            display: block;
+            background-color: #222;
+            width: 100%;
+        }
+
+        #browserCanvas {
+            max-width: 100%;
+            width: 100%;
+            display: block;
+            cursor: default;
+        }
+
+        #loadingOverlay {
+            display: none;
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            color: white;
+            justify-content: center;
+            align-items: center;
+            font-size: 24px;
+        }
+
+        .status-connected {
+            color: green;
+        }
+
+        .status-disconnected {
+            color: red;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="controls">
+        <div id="serverControls">
+            <input type="text" id="serverInput" placeholder="Server URL" value="http://localhost:8080">
+            <button onclick="connectToServer()">Connect to Server</button>
+            <span id="connectionStatus" class="status-disconnected">Disconnected</span>
+        </div>
+        <div>
+            <input type="text" id="urlInput" placeholder="Enter URL" value="https://example.com">
+            <button onclick="startSession()" id="loadButton" disabled>Load URL</button>
+        </div>
+    </div>
+    <div id="viewer">
+        <canvas id="browserCanvas"></canvas>
+        <div id="loadingOverlay">Loading...</div>
+    </div>
+
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script>
+        let socket = null;
+        const canvas = document.getElementById('browserCanvas');
+        const ctx = canvas.getContext('2d');
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        const connectionStatus = document.getElementById('connectionStatus');
+        const loadButton = document.getElementById('loadButton');
+        const controls = document.getElementById('controls');
+
+        // Parse URL parameters
+        function getUrlParameters() {
+            const params = new URLSearchParams(window.location.search);
+            return {
+                socketUrl: params.get('socket'),
+                targetUrl: params.get('url')
+            };
+        }
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            const params = getUrlParameters();
+            if (params.socketUrl && params.targetUrl) {
+                // Hide controls if we have URL parameters
+                controls.classList.add('hidden');
+                // Auto-connect to socket and load URL
+                document.getElementById('serverInput').value = params.socketUrl;
+                document.getElementById('urlInput').value = params.targetUrl;
+                autoConnect(params.socketUrl, params.targetUrl);
+            }
+        });
+
+        // Auto-connect function
+        async function autoConnect(socketUrl, targetUrl) {
+            try {
+                await connectToServerAsync(socketUrl);
+                // Wait a brief moment to ensure socket connection is stable
+                setTimeout(() => {
+                    if (socket && socket.connected) {
+                        startSession(targetUrl);
+                    }
+                }, 500);
+            } catch (error) {
+                console.error('Auto-connect failed:', error);
+                controls.classList.remove('hidden'); // Show controls if auto-connect fails
+            }
+        }
+
+        // Modified connect function to return a promise
+        function connectToServerAsync(serverUrl) {
+            return new Promise((resolve, reject) => {
+                if (socket) {
+                    socket.disconnect();
+                }
+
+                try {
+                    socket = io(serverUrl, {
+                        reconnection: true,
+                        reconnectionDelay: 1000,
+                        reconnectionDelayMax: 5000,
+                        reconnectionAttempts: 5,
+                        transports: ['websocket', 'polling']
+                    });
+
+                    setupSocketListeners(resolve, reject);
+                    loadingOverlay.textContent = 'Connecting to server...';
+                    loadingOverlay.style.display = 'flex';
+                } catch (error) {
+                    console.error('Connection error:', error);
+                    updateConnectionStatus('Connection Error', false);
+                    reject(error);
+                }
+            });
+        }
+
+        // Modified to support the original click-based connection
+        function connectToServer() {
+            const serverUrl = document.getElementById('serverInput').value;
+            connectToServerAsync(serverUrl).catch(console.error);
+        }
+
+        function setupSocketListeners(resolve = null, reject = null) {
+            socket.on('connect', () => {
+                console.log('Connected to server');
+                updateConnectionStatus('Connected', true);
+                loadingOverlay.style.display = 'none';
+                loadButton.disabled = false;
+                if (resolve) resolve();
+            });
+
+            socket.on('disconnect', () => {
+                console.log('Disconnected from server');
+                updateConnectionStatus('Disconnected', false);
+                loadButton.disabled = true;
+            });
+
+            socket.on('connect_error', (error) => {
+                console.error('Connection error:', error);
+                updateConnectionStatus('Connection Error', false);
+                loadingOverlay.textContent = 'Connection error. Retrying...';
+                loadingOverlay.style.display = 'flex';
+                if (reject) reject(error);
+            });
+
+            // Keep all your existing socket listeners
+            socket.on('sessionStarting', ({ url }) => {
+                console.log(`Server is starting session for: ${url}`);
+                loadingOverlay.textContent = `Loading ${url}...`;
+                loadingOverlay.style.display = 'flex';
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                canvas.style.width = '0px';
+                canvas.style.height = '0px';
+            });
+
+            socket.on('screenshot', (base64Image) => {
+                if (loadingOverlay.style.display !== 'none') {
+                    loadingOverlay.style.display = 'none';
+                }
+
+                const image = new Image();
+                image.onload = () => {
+                    canvas.width = image.naturalWidth;
+                    canvas.height = image.naturalHeight;
+                    ctx.drawImage(image, 0, 0);
+                    resizeCanvas();
+                };
+                image.src = `data:image/jpeg;base64,${base64Image}`;
+            });
+
+            socket.on('error', (error) => {
+                console.error('Server error:', error);
+                loadingOverlay.textContent = `Error: ${error}`;
+                loadingOverlay.style.display = 'flex';
+            });
+
+            socket.on('reconnect', (attemptNumber) => {
+                console.log('Reconnected after', attemptNumber, 'attempts');
+                updateConnectionStatus('Connected', true);
+                loadingOverlay.style.display = 'none';
+            });
+        }
+
+        function updateConnectionStatus(status, isConnected) {
+            connectionStatus.textContent = status;
+            connectionStatus.className = isConnected ? 'status-connected' : 'status-disconnected';
+        }
+
+        function startSession(urlOverride = null) {
+            if (!socket || !socket.connected) {
+                alert('Please connect to a server first');
+                return;
+            }
+
+            const url = urlOverride || document.getElementById('urlInput').value;
+
+            loadingOverlay.style.display = 'flex';
+            loadingOverlay.textContent = 'Requesting new session...';
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            canvas.style.width = '0px';
+            canvas.style.height = '0px';
+
+            socket.emit('startSession', { url });
+        }
+
+        // Keep all your existing event listeners
+        canvas.addEventListener('wheel', (e) => {
+            if (socket && socket.connected) {
+                e.preventDefault();
+                socket.emit('scroll', { deltaY: e.deltaY });
+            }
+        });
+
+        // Keep your existing mouse event listeners
+        let isDragging = false;
+        let dragStartX = 0;
+        let dragStartY = 0;
+
+        canvas.addEventListener('mousedown', (e) => {
+            if (socket && socket.connected) {
+                isDragging = false;
+                dragStartX = e.clientX;
+                dragStartY = e.clientY;
+                
+                const rect = canvas.getBoundingClientRect();
+                const scaleX = canvas.width / canvas.style.width.replace('px', '');
+                const scaleY = canvas.height / canvas.style.height.replace('px', '');
+                
+                const x = (e.clientX - rect.left) * scaleX;
+                const y = (e.clientY - rect.top) * scaleY;
+                
+                socket.emit('mousedown', { x, y });
+            }
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            if (socket && socket.connected) {
+                if (Math.abs(e.clientX - dragStartX) > 5 || Math.abs(e.clientY - dragStartY) > 5) {
+                    isDragging = true;
+                }
+                
+                const rect = canvas.getBoundingClientRect();
+                const scaleX = canvas.width / canvas.style.width.replace('px', '');
+                const scaleY = canvas.height / canvas.style.height.replace('px', '');
+                
+                const x = (e.clientX - rect.left) * scaleX;
+                const y = (e.clientY - rect.top) * scaleY;
+                
+                socket.emit('mousemove', { x, y, isDragging });
+            }
+        });
+
+        canvas.addEventListener('mouseup', (e) => {
+            if (socket && socket.connected) {
+                const rect = canvas.getBoundingClientRect();
+                const scaleX = canvas.width / canvas.style.width.replace('px', '');
+                const scaleY = canvas.height / canvas.style.height.replace('px', '');
+                
+                const x = (e.clientX - rect.left) * scaleX;
+                const y = (e.clientY - rect.top) * scaleY;
+                
+                if (!isDragging) {
+                    socket.emit('click', { x, y });
+                }
+                
+                socket.emit('mouseup', { x, y });
+                isDragging = false;
+            }
+        });
+
+        function resizeCanvas() {
+            if (!canvas.width || !canvas.height) return;
+
+            const container = canvas.parentElement;
+            const containerWidth = container.clientWidth;
+            const containerHeight = container.clientHeight;
+            const canvasRatio = canvas.width / canvas.height;
+
+            let displayWidth = containerWidth;
+            let displayHeight = displayWidth / canvasRatio;
+
+            if (displayHeight > containerHeight) {
+                document.getElementById('viewer').style.overflowY = 'auto';
+            } else {
+                document.getElementById('viewer').style.overflowY = 'hidden';
+            }
+
+            canvas.style.width = `${displayWidth}px`;
+            canvas.style.height = `${displayHeight}px`;
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+    </script>
+</body>
+</html>
