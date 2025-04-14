@@ -198,7 +198,25 @@
                 }
 
                 try {
-                    socket = io(serverUrl, {
+                    // Ensure secure connection from HTTPS pages
+                    let secureServerUrl = serverUrl;
+                    if (window.location.protocol === 'https:' && serverUrl.startsWith('http://')) {
+                        secureServerUrl = serverUrl.replace('http://', 'https://');
+                        console.log(`Attempting secure connection to: ${secureServerUrl}`);
+                    } else if (window.location.protocol === 'https:' && !serverUrl.startsWith('https://')) {
+                        // Handle cases where URL might not have a protocol or is relative (less likely for socket URLs)
+                        // Assuming it should be https if the page is https
+                        if (!serverUrl.includes('://')) {
+                             // Basic check if it looks like a domain/IP without protocol
+                             if (serverUrl.match(/^([a-zA-Z0-9.-]+)(:\d+)?(\/.*)?$/)) {
+                                secureServerUrl = 'https://' + serverUrl;
+                                console.log(`Assuming secure connection for relative/no-protocol URL: ${secureServerUrl}`);
+                             }
+                        }
+                    }
+
+
+                    socket = io(secureServerUrl, {
                         // Force WebSocket transport only
                         transports: ['websocket'],
                         // Disable automatic reconnection for this test
