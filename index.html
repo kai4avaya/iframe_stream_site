@@ -325,6 +325,14 @@
 
         // Auto-connect function
         async function autoConnect(socketUrl, targetUrl) {
+            console.log('autoConnect called with socketUrl:', socketUrl, 'and targetUrl:', targetUrl);
+            // Normalize targetUrl immediately if provided via parameters
+            if (targetUrl && !targetUrl.match(/^https?:\/\//i)) {
+                targetUrl = 'https://' + targetUrl;
+                console.log('Normalized targetUrl in autoConnect to:', targetUrl);
+                // Update the input field as well for consistency, though it's hidden
+                document.getElementById('urlInput').value = targetUrl;
+            }
             try {
                 await connectToServerAsync(socketUrl);
                 // Wait a brief moment to ensure socket connection is stable
@@ -475,8 +483,14 @@
                 return;
             }
 
-            const url = urlOverride || document.getElementById('urlInput').value;
-            console.log('startSession called for URL:', url); // Added log
+            let url = urlOverride || document.getElementById('urlInput').value;
+            console.log('startSession called with initial URL:', url);
+
+            // Normalize URL: Prepend https:// if no protocol is present
+            if (url && !url.match(/^https?:\/\//i)) {
+                url = 'https://' + url;
+                console.log('Normalized URL to:', url);
+            }
 
             // Show the new loading container and set initial state
             loadingUrl.textContent = url;
@@ -509,6 +523,12 @@
                 loadingMessage.textContent = `Loading... ${Math.round(progress)}%`;
             }, intervalTime);
 
+            // Final URL normalization check right before emitting
+            if (url && !url.match(/^https?:\/\//i)) {
+                console.log(`Re-normalizing URL from "${url}" just before emit.`);
+                url = 'https://' + url;
+                console.log(`Final URL for emit: "${url}"`);
+            }
 
             socket.emit('startSession', { url });
         }
