@@ -1,626 +1,350 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Browser Viewer</title>
-    <script>
-        // Domain verification - runs immediately
-        (function() {
-            const allowedDomains = [
-                'https://customdemo.experience.avaya.com',
-                'http://localhost',
-                'http://127.0.0.1'
-            ];
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Browser Viewer</title>
+  <style>
+    /* fill the window */
+    body {
+      margin: 0; padding: 0;
+      display: flex; flex-direction: column;
+      height: 100vh; overflow: hidden;
+      font-family: sans-serif;
+    }
+    /* top controls bar */
+    #controls {
+      padding: 10px;
+      background: #f0f0f0;
+      z-index: 20;
+    }
+    #serverControls { margin-bottom: 10px; }
+    /* viewer fills remaining */
+    #viewer {
+      flex: 1;
+      position: relative;
+      background-color: #222;
+      overflow: hidden;
+    }
+    /* canvas centered */
+    #browserCanvas {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      cursor: default;
+    }
+    /* loading overlay */
+    #loadingContainer {
+      position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+      display: none; justify-content: center; align-items: center;
+      background: skyblue; overflow: hidden; z-index: 10;
+    }
+    #loadingContainer.loading-active {
+      display: flex;
+    }
+    /* small loading component */
+    #loadingContent {
+      position: absolute; top: 10px; left: 10px;
+      display: flex; align-items: center;
+      background: rgba(255,255,255,0.8);
+      padding: 5px 10px; border-radius: 5px;
+      color: black; font-size: 14px; z-index: 11;
+      margin-left: 0; /* default */
+    }
+    #loadingLogo {
+      width: 70px; height: 20px; margin-right: 10px;
+    }
+    #loadingText {
+      display: flex; flex-direction: column;
+    }
+    #loadingUrl {
+      font-weight: bold;
+      max-width: 300px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    #loadingMessage {
+      font-size: 12px;
+    }
+    /* hint line */
+    #loadingHint {
+      margin-top: 4px;
+      font-size: 12px;
+      color: #333;
+    }
 
-            function isAllowedDomain() {
-                if (window.self === window.top) {
-                    // Not in an iframe, allow
-                    return true;
-                }
+    /* bird sprite */
+    .bird {
+      background-image: url('https://s3-us-west-2.amazonaws.com/s.cdpn.io/174479/bird-cells-new.svg');
+      background-size: auto 100%;
+      width: 88px; height: 125px;
+      animation: fly-cycle steps(10) infinite;
+    }
+    .bird-one   { animation-duration: 1s;    animation-delay: -0.5s; }
+    .bird-two   { animation-duration: 0.9s;  animation-delay: -0.75s; }
+    .bird-three { animation-duration:1.25s;  animation-delay: -0.25s; }
+    .bird-four  { animation-duration:1.1s;   animation-delay: -0.5s;  }
+    .bird-container {
+      display: none;
+      position: absolute; top: 10%; left: -10%;
+      animation: fly-right linear infinite;
+      z-index: 9;
+    }
+    .bird-container-one   { animation-duration: 15s;   animation-delay: 0;    }
+    .bird-container-two   { animation-duration: 16s;   animation-delay: 1s;   }
+    .bird-container-three { animation-duration: 14.6s; animation-delay:9.5s;  }
+    .bird-container-four  { animation-duration: 16s;   animation-delay:10.25s;}
+    @keyframes fly-cycle { to { background-position: -900px 0; } }
+    @keyframes fly-right {
+      0%   { transform: translate(-10vw,20vh) scale(0.3); }
+      50%  { transform: translate( 90vw,20vh) scale(0.6); }
+      100% { transform: translate(110vw,15vh) scale(0.6); }
+    }
+    #loadingContainer.loading-active .bird-container {
+      display: block;
+    }
 
-                try {
-                    const parentDomain = document.referrer;
-                    return allowedDomains.some(domain => parentDomain.startsWith(domain));
-                } catch (e) {
-                    return false;
-                }
-            }
+    /* clouds */
+    .cloud {
+      position: absolute;
+      background: radial-gradient(circle, rgba(255,255,255,0.9) 50%, rgba(255,255,255,0) 70%);
+      border-radius: 50%; opacity: 0.7; z-index: 8;
+      animation: drift linear infinite;
+    }
+    .cloud-1 { top:15%; width:200px; height:60px; animation-duration:70s; animation-delay:-10s; left:-250px; }
+    .cloud-2 { top:30%; width:150px; height:45px; animation-duration:80s; animation-delay:-30s; left:-200px; }
+    .cloud-3 { top:50%; width:250px; height:70px; animation-duration:60s; animation-delay:-5s;  left:-300px; }
+    .cloud-4 { top:65%; width:180px; height:55px; animation-duration:90s; animation-delay:-40s; left:-220px; }
+    .cloud-5 { top:80%; width:220px; height:65px; animation-duration:75s; animation-delay:-20s; left:-280px; }
+    @keyframes drift { to { transform: translateX(130vw); } }
+    #loadingContainer.loading-active .cloud {
+      display: block;
+    }
 
-            if (!isAllowedDomain()) {
-                window.top.location = window.self.location;
-            }
-        })();
-    </script>
-    <style>
-        body {
-            margin: 0;
-            padding: 0;
-            overflow: hidden;
-            display: flex;
-            flex-direction: column;
-            height: 100vh;
-        }
-
-        #controls {
-            padding: 10px;
-            background: #f0f0f0;
-        }
-
-        #serverControls {
-            margin-bottom: 10px;
-        }
-
-        #viewer {
-            flex: 1;
-            position: relative;
-            overflow-x: hidden;
-            display: block;
-            background-color: #222;
-            width: 100%;
-        }
-
-        #browserCanvas {
-            max-width: 100%;
-            width: 100%;
-            display: block;
-            cursor: default;
-        }
-
-        /* Removed old #loadingOverlay styles */
-
-        /* New Loading Container Styles */
-        #loadingContainer {
-            display: none; /* Hidden by default */
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background-color: white; /* Changed to white */
-            z-index: 10;
-            overflow: hidden; /* Keep birds contained */
-        }
-
-        #loadingContent {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            display: flex;
-            align-items: center;
-            background: rgba(255, 255, 255, 0.8); /* Light semi-transparent background */
-            padding: 5px 10px;
-            border-radius: 5px;
-            color: black; /* Changed text color to black */
-            font-family: sans-serif;
-            font-size: 14px;
-            z-index: 11; /* Above birds */
-        }
-
-        #loadingLogo {
-            width: 70px; /* Scaled down */
-            height: 20px;
-            margin-right: 10px;
-        }
-
-        #loadingText {
-            display: flex;
-            flex-direction: column;
-        }
-
-        #loadingUrl {
-            font-weight: bold;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            max-width: 300px; /* Limit URL width */
-        }
-
-        #loadingMessage {
-            font-size: 12px;
-        }
-
-        /* Bird Animation CSS */
-        .bird{
-            background-image: url('https://s3-us-west-2.amazonaws.com/s.cdpn.io/174479/bird-cells-new.svg');
-            /* filter: invert(34%) sepia(55%) saturate(427%) hue-rotate(141deg) brightness(93%) contrast(91%); */ /* Removed filter for white background */
-            background-size: auto 100%;
-            width: 88px;
-            height: 125px;
-            will-change: background-position;
-
-            animation-name: fly-cycle;
-            animation-timing-function: steps(10);
-            animation-iteration-count: infinite;
-        }
-
-        .bird-one{
-            animation-duration: 1s;
-            animation-delay: -0.5s;
-        }
-        .bird-two{
-            animation-duration: 0.9s; /* Corrected syntax */
-            animation-delay: -0.75s; /* Corrected syntax */
-        }
-        .bird-three{
-            animation-duration:1.25s;
-            animation-delay: -0.25s;
-        }
-        .bird-four{
-            animation-duration: 1.1s;
-            animation-delay: -0.5s;
-        }
-
-        .bird-container {
-            position: absolute;
-            top: 10%;
-            left: -10%; /* Start further left */
-            transform: scale(0) translateX(-10vw);
-            will-change: transform;
-
-            animation-name: fly-right-one; /* Using one animation for simplicity, adjust if needed */
-            animation-timing-function: linear;
-            animation-iteration-count: infinite;
-            z-index: 9; /* Below loading text */
-        }
-
-        .bird-container-one{
-            animation-duration: 15s;
-            animation-delay: 0;
-        }
-
-        .bird-container-two{
-            animation-duration: 16s;
-            animation-delay: 1s;
-        }
-
-        .bird-container-three{
-            animation-duration: 14.6s;
-            animation-delay: 9.5s;
-        }
-
-        .bird-container-four {
-            animation-duration: 16s;
-            animation-delay: 10.25s;
-        }
-
-        @keyframes fly-cycle {
-            100% {
-                background-position: -900px 0;
-            }
-        }
-
-        @keyframes fly-right-one {
-            0% { transform: scale(0.3) translateX(-10vw) translateY(20vh); }
-            10% { transform: translateY(18vh) translateX(10vw) scale(0.4); }
-            20% { transform: translateY(10vh) translateX(30vw) scale(0.5); }
-            30% { transform: translateY(24vh) translateX(50vw) scale(0.6); }
-            40% { transform: translateY(12vh) translateX(70vw) scale(0.6); }
-            50% { transform: translateY(20vh) translateX(90vw) scale(0.6); }
-            60% { transform: translateY(15vh) translateX(110vw) scale(0.6); }
-            100% { transform: translateY(15vh) translateX(110vw) scale(0.6); }
-        }
-
-        /* Removed fly-right-two as fly-right-one is used for all */
-
-        .status-connected {
-            color: green;
-        }
-
-        .status-disconnected {
-            color: red;
-        }
-
-        .hidden {
-            display: none !important;
-        }
-    </style>
+    /* night mode */
+    body.night-mode #loadingContainer {
+      background: #00001a;
+    }
+    body.night-mode .cloud {
+      display: none;
+    }
+    body.night-mode #loadingContent {
+      background: rgba(50,50,50,0.8);
+      color: white;
+    }
+    body.night-mode .bird {
+      filter: invert(100%) brightness(1.5);
+    }
+    body.night-mode #loadingLogo {
+      filter: invert(100%) brightness(1.5);
+    }
+    /* stars */
+    body.night-mode #loadingContainer::before,
+    body.night-mode #loadingContainer::after {
+      content: ''; position: absolute; width:1px; height:1px; background:white;
+      box-shadow:
+        50px 30px white,100px 80px white,150px 40px white,200px 120px white,
+        250px 60px white,300px 100px white,350px 20px white,400px 90px white;
+      z-index:7; animation: twinkle 2s infinite alternate;
+    }
+    body.night-mode #loadingContainer::after {
+      transform: translate(20px,15px); animation-delay:1s;
+    }
+    @keyframes twinkle { from {opacity:0.5;} to {opacity:1;} }
+  </style>
 </head>
-
 <body>
-    <div id="controls">
-        <div id="serverControls">
-            <input type="text" id="serverInput" placeholder="Server URL" value="http://localhost:8080">
-            <button onclick="connectToServer()">Connect to Server</button>
-            <span id="connectionStatus" class="status-disconnected">Disconnected</span>
-        </div>
-        <div>
-            <input type="text" id="urlInput" placeholder="Enter URL" value="https://example.com">
-            <button onclick="startSession()" id="loadButton" disabled>Load URL</button>
-        </div>
+  <div id="controls">
+    <div id="serverControls">
+      <input id="serverInput" placeholder="Server URL (↑↓ history)" value="http://localhost:8080">
+      <button onclick="connectToServer()">Connect</button>
+      <span id="connectionStatus" class="status-disconnected">Disconnected</span>
     </div>
-    <div id="viewer">
-        <canvas id="browserCanvas"></canvas>
-        <!-- New Loading Container -->
-        <div id="loadingContainer">
-            <div id="loadingContent">
-                <img id="loadingLogo" src="images/avaya_logo.svg" alt="Avaya Logo">
-                <div id="loadingText">
-                    <span id="loadingUrl"></span>
-                    <span id="loadingMessage">Loading...</span>
-                </div>
-            </div>
-            <!-- Bird Animation -->
-            <div class="bird-container bird-container-one">
-                <div class="bird bird-one"></div>
-            </div>
-            <div class="bird-container bird-container-two">
-                <div class="bird bird-two"></div>
-            </div>
-            <div class="bird-container bird-container-three">
-                <div class="bird bird-three"></div>
-            </div>
-            <div class="bird-container bird-container-four">
-                <div class="bird bird-four"></div>
-            </div>
-        </div>
+    <div>
+      <input id="urlInput" placeholder="Enter URL (↑↓ history)" value="https://example.com">
+      <button id="loadButton" onclick="startSession()" disabled>Load URL</button>
     </div>
+  </div>
 
-    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-    <script>
-        // Security check on load
-        document.addEventListener('DOMContentLoaded', () => {
-            const allowedDomains = [
-                'https://customdemo.experience.avaya.com',
-                'http://localhost',
-                'http://127.0.0.1',
-                'https://localhost:3000'
-            ];
+  <div id="viewer">
+    <canvas id="browserCanvas"></canvas>
+    <div id="loadingContainer">
+      <div id="loadingContent">
+        <img id="loadingLogo" src="/assets/icons/Avaya_Logo.svg" alt="Logo">
+        <div id="loadingText">
+          <span id="loadingUrl"></span>
+          <span id="loadingMessage">Loading...</span>
+          <div id="loadingHint">🛈 Please wait for page to fully load</div>
+        </div>
+      </div>
+      <div class="bird-container bird-container-one"><div class="bird bird-one"></div></div>
+      <div class="bird-container bird-container-two"><div class="bird bird-two"></div></div>
+      <div class="bird-container bird-container-three"><div class="bird bird-three"></div></div>
+      <div class="bird-container bird-container-four"><div class="bird bird-four"></div></div>
+      <div class="cloud cloud-1"></div>
+      <div class="cloud cloud-2"></div>
+      <div class="cloud cloud-3"></div>
+      <div class="cloud cloud-4"></div>
+      <div class="cloud cloud-5"></div>
+    </div>
+  </div>
 
-            function checkDomainAccess() {
-                if (window.self === window.top) {
-                    return true; // Not in an iframe
-                }
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <script>
+    class InputHistory { /* … */ }
 
-                try {
-                    const parentOrigin = new URL(document.referrer).origin;
-                    return allowedDomains.includes(parentOrigin);
-                } catch (e) {
-                    console.error('Domain access check failed:', e);
-                    return false;
-                }
-            }
+    const canvas = document.getElementById('browserCanvas');
+    const ctx    = canvas.getContext('2d');
+    const viewer = document.getElementById('viewer');
+    const loadingContainer = document.getElementById('loadingContainer');
+    const loadingContent   = document.getElementById('loadingContent');
+    const loadingUrl       = document.getElementById('loadingUrl');
+    const loadingMessage   = document.getElementById('loadingMessage');
+    const connectionStatus = document.getElementById('connectionStatus');
+    const loadButton       = document.getElementById('loadButton');
+    let socket, progressInterval, hideLoadingTimeoutId;
 
-            if (!checkDomainAccess()) {
-                document.body.innerHTML = '<h1>Access Denied</h1><p>This content cannot be displayed in an iframe from your domain.</p>';
-                return;
-            }
+    function updateConnectionStatus(text, ok) {
+      connectionStatus.textContent = text;
+      connectionStatus.className = ok ? 'status-connected' : 'status-disconnected';
+    }
+
+    function connectToServerAsync(url) {
+      return new Promise((res, rej) => {
+        if (socket) socket.disconnect();
+        socket = io(url, { transports:['websocket'], reconnection:false });
+        socket.once('connect', () => {
+          updateConnectionStatus('Connected', true);
+          loadButton.disabled = false;
+          res();
         });
-    </script>
-    <script>
-        let socket = null;
-        const canvas = document.getElementById('browserCanvas');
-        const ctx = canvas.getContext('2d');
-        // const loadingOverlay = document.getElementById('loadingOverlay'); // Removed reference to old overlay
-        const connectionStatus = document.getElementById('connectionStatus');
-        const loadButton = document.getElementById('loadButton');
-        const controls = document.getElementById('controls');
-        // New loading elements
-        const loadingContainer = document.getElementById('loadingContainer');
-        const loadingUrl = document.getElementById('loadingUrl');
-        const loadingMessage = document.getElementById('loadingMessage');
-        let progressInterval = null; // To manage the simulated progress
-
-        // Parse URL parameters
-        function getUrlParameters() {
-            const params = new URLSearchParams(window.location.search);
-            return {
-                socketUrl: params.get('socket'),
-                targetUrl: params.get('url')
-            };
-        }
-
-        // Initialize on page load
-        document.addEventListener('DOMContentLoaded', () => {
-            const params = getUrlParameters();
-            if (params.socketUrl && params.targetUrl) {
-                // Hide controls if we have URL parameters
-                controls.classList.add('hidden');
-                // Auto-connect to socket and load URL
-                document.getElementById('serverInput').value = params.socketUrl;
-                document.getElementById('urlInput').value = params.targetUrl;
-                autoConnect(params.socketUrl, params.targetUrl);
-            }
+        socket.once('connect_error', e => {
+          updateConnectionStatus('Error', false);
+          rej(e);
         });
-
-        // Auto-connect function
-        async function autoConnect(socketUrl, targetUrl) {
-            console.log('autoConnect called with socketUrl:', socketUrl, 'and targetUrl:', targetUrl);
-            // Normalize targetUrl immediately if provided via parameters
-            if (targetUrl && !targetUrl.match(/^https?:\/\//i)) {
-                targetUrl = 'https://' + targetUrl;
-                console.log('Normalized targetUrl in autoConnect to:', targetUrl);
-                // Update the input field as well for consistency, though it's hidden
-                document.getElementById('urlInput').value = targetUrl;
-            }
-            try {
-                await connectToServerAsync(socketUrl);
-                // Wait a brief moment to ensure socket connection is stable
-                setTimeout(() => {
-                    if (socket && socket.connected) {
-                        startSession(targetUrl);
-                    }
-                }, 500);
-            } catch (error) {
-                console.error('Auto-connect failed:', error);
-                controls.classList.remove('hidden'); // Show controls if auto-connect fails
-            }
-        }
-
-        // Modified connect function to return a promise
-        function connectToServerAsync(serverUrl) {
-            return new Promise((resolve, reject) => {
-                if (socket) {
-                    socket.disconnect();
-                }
-
-                try {
-                    // Ensure secure connection from HTTPS pages
-                    let secureServerUrl = serverUrl;
-                    if (window.location.protocol === 'https:' && serverUrl.startsWith('http://')) {
-                        secureServerUrl = serverUrl.replace('http://', 'https://');
-                        console.log(`Attempting secure connection to: ${secureServerUrl}`);
-                    } else if (window.location.protocol === 'https:' && !serverUrl.startsWith('https://')) {
-                        // Handle cases where URL might not have a protocol or is relative (less likely for socket URLs)
-                        // Assuming it should be https if the page is https
-                        if (!serverUrl.includes('://')) {
-                             // Basic check if it looks like a domain/IP without protocol
-                             if (serverUrl.match(/^([a-zA-Z0-9.-]+)(:\d+)?(\/.*)?$/)) {
-                                secureServerUrl = 'https://' + serverUrl;
-                                console.log(`Assuming secure connection for relative/no-protocol URL: ${secureServerUrl}`);
-                             }
-                        }
-                    }
-
-
-                    socket = io(secureServerUrl, {
-                        // Force WebSocket transport only
-                        transports: ['websocket'],
-                        // Disable automatic reconnection for this test
-                        reconnection: false
-                    });
-
-                    setupSocketListeners(resolve, reject);
-                    // Removed old overlay logic during connection attempt
-                } catch (error) {
-                    console.error('Connection error:', error);
-                    updateConnectionStatus('Connection Error', false);
-                    loadingContainer.style.display = 'none'; // Ensure new container is hidden on initial connection error
-                    reject(error);
-                }
-            });
-        }
-
-        // Modified to support the original click-based connection
-        function connectToServer() {
-            const serverUrl = document.getElementById('serverInput').value;
-            connectToServerAsync(serverUrl).catch(console.error);
-        }
-
-        function setupSocketListeners(resolve = null, reject = null) {
-            socket.on('connect', () => {
-                console.log('Connected to server');
-                updateConnectionStatus('Connected', true);
-                // Removed old overlay logic on connect
-                loadButton.disabled = false;
-                if (resolve) resolve();
-            });
-
-            socket.on('disconnect', () => {
-                console.log('Disconnected from server');
-                updateConnectionStatus('Disconnected', false);
-                loadButton.disabled = true;
-            });
-
-            socket.on('connect_error', (error) => {
-                console.error('Connection error:', error);
-                updateConnectionStatus('Connection Error', false);
-                // Removed old overlay logic on connect error
-                if (reject) reject(error);
-            });
-
-            // Keep all your existing socket listeners - Modified sessionStarting
-            socket.on('sessionStarting', ({ url }) => {
-                console.log(`Server is starting session for: ${url}`);
-                // No longer using the old overlay here, handled in startSession()
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                canvas.style.width = '0px';
-                canvas.style.height = '0px';
-            });
-
-            // Modified screenshot handler
-            socket.on('screenshot', (base64Image) => {
-                console.log('screenshot event received. Attempting to hide loading container.'); // Added log
-                // Hide the new loading container when the first image arrives
-                if (loadingContainer.style.display !== 'none') {
-                    loadingContainer.style.display = 'none';
-                    console.log('Loading container hidden.'); // Added log
-                    if (progressInterval) {
-                        clearInterval(progressInterval); // Stop progress simulation
-                        progressInterval = null;
-                    }
-                } else {
-                    console.log('Loading container was already hidden.'); // Added log
-                }
-
-                const image = new Image();
-                image.onload = () => {
-                    canvas.width = image.naturalWidth;
-                    canvas.height = image.naturalHeight;
-                    ctx.drawImage(image, 0, 0);
-                    resizeCanvas();
-                };
-                image.src = `data:image/jpeg;base64,${base64Image}`;
-            });
-
-            // Modified error handler
-            socket.on('error', (error) => {
-                console.error('Server error:', error);
-                loadingUrl.textContent = 'Error';
-                loadingMessage.textContent = `Error: ${error}`;
-                loadingContainer.style.display = 'flex'; // Keep loading visible on error
-                if (progressInterval) {
-                    clearInterval(progressInterval); // Stop progress simulation
-                    progressInterval = null;
-                }
-            });
-
-            socket.on('reconnect', (attemptNumber) => {
-                console.log('Reconnected after', attemptNumber, 'attempts');
-                updateConnectionStatus('Connected', true);
-                // Removed old overlay logic on reconnect
-            });
-        }
-
-        function updateConnectionStatus(status, isConnected) {
-            connectionStatus.textContent = status;
-            connectionStatus.className = isConnected ? 'status-connected' : 'status-disconnected';
-        }
-
-        function startSession(urlOverride = null) {
-            if (!socket || !socket.connected) {
-                alert('Please connect to a server first');
-                return;
-            }
-
-            let url = urlOverride || document.getElementById('urlInput').value;
-            console.log('startSession called with initial URL:', url);
-
-            // Normalize URL: Prepend https:// if no protocol is present
-            if (url && !url.match(/^https?:\/\//i)) {
-                url = 'https://' + url;
-                console.log('Normalized URL to:', url);
-            }
-
-            // Show the new loading container and set initial state
-            loadingUrl.textContent = url;
-            loadingMessage.textContent = 'Loading... 0%';
-            console.log('Attempting to display loading container...'); // Added log
-            loadingContainer.style.display = 'flex';
-            console.log('Loading container display set to flex.'); // Added log
-
-            // Clear previous canvas content
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            canvas.style.width = '0px';
-            canvas.style.height = '0px';
-
-            // Clear any existing progress simulation
-            if (progressInterval) {
-                clearInterval(progressInterval);
-            }
-
-            // Simulate loading progress (adjust timing as needed)
-            let progress = 0;
-            const estimatedLoadTime = 5000; // 5 seconds estimate
-            const intervalTime = 200; // Update every 200ms
-            progressInterval = setInterval(() => {
-                progress += (intervalTime / estimatedLoadTime) * 100;
-                if (progress >= 99) {
-                    progress = 99; // Don't quite hit 100%
-                    clearInterval(progressInterval);
-                    progressInterval = null;
-                }
-                loadingMessage.textContent = `Loading... ${Math.round(progress)}%`;
-            }, intervalTime);
-
-            // Final URL normalization check right before emitting
-            if (url && !url.match(/^https?:\/\//i)) {
-                console.log(`Re-normalizing URL from "${url}" just before emit.`);
-                url = 'https://' + url;
-                console.log(`Final URL for emit: "${url}"`);
-            }
-
-            socket.emit('startSession', { url });
-        }
-
-        // Keep all your existing event listeners
-        canvas.addEventListener('wheel', (e) => {
-            if (socket && socket.connected) {
-                e.preventDefault();
-                socket.emit('scroll', { deltaY: e.deltaY });
-            }
+        socket.on('disconnect', () => {
+          updateConnectionStatus('Disconnected', false);
+          loadButton.disabled = true;
         });
+        setupSocketListeners();
+      });
+    }
 
-        // Keep your existing mouse event listeners
-        let isDragging = false;
-        let dragStartX = 0;
-        let dragStartY = 0;
+    function connectToServer() {
+      connectToServerAsync(document.getElementById('serverInput').value).catch(console.error);
+    }
 
-        canvas.addEventListener('mousedown', (e) => {
-            if (socket && socket.connected) {
-                isDragging = false;
-                dragStartX = e.clientX;
-                dragStartY = e.clientY;
-                
-                const rect = canvas.getBoundingClientRect();
-                const scaleX = canvas.width / canvas.style.width.replace('px', '');
-                const scaleY = canvas.height / canvas.style.height.replace('px', '');
-                
-                const x = (e.clientX - rect.left) * scaleX;
-                const y = (e.clientY - rect.top) * scaleY;
-                
-                socket.emit('mousedown', { x, y });
-            }
-        });
+    function setupSocketListeners() {
+      socket.on('sessionStarting', () => {
+        canvas.width = canvas.height = 0;
+      });
+      socket.on('screenshot', base64 => {
+      // 1) hide birds & clouds immediately:
+      loadingContainer.classList.remove('loading-active');
 
-        canvas.addEventListener('mousemove', (e) => {
-            if (socket && socket.connected) {
-                if (Math.abs(e.clientX - dragStartX) > 5 || Math.abs(e.clientY - dragStartY) > 5) {
-                    isDragging = true;
-                }
-                
-                const rect = canvas.getBoundingClientRect();
-                const scaleX = canvas.width / canvas.style.width.replace('px', '');
-                const scaleY = canvas.height / canvas.style.height.replace('px', '');
-                
-                const x = (e.clientX - rect.left) * scaleX;
-                const y = (e.clientY - rect.top) * scaleY;
-                
-                socket.emit('mousemove', { x, y, isDragging });
-            }
-        });
+      // 2) keep the Avaya‐logo overlay for 7 seconds, then hide it:
+      setTimeout(() => {
+        loadingContainer.style.display = 'none';
+        clearInterval(progressInterval);
+        progressInterval = null;
+      }, 7000);
 
-        canvas.addEventListener('mouseup', (e) => {
-            if (socket && socket.connected) {
-                const rect = canvas.getBoundingClientRect();
-                const scaleX = canvas.width / canvas.style.width.replace('px', '');
-                const scaleY = canvas.height / canvas.style.height.replace('px', '');
-                
-                const x = (e.clientX - rect.left) * scaleX;
-                const y = (e.clientY - rect.top) * scaleY;
-                
-                if (!isDragging) {
-                    socket.emit('click', { x, y });
-                }
-                
-                socket.emit('mouseup', { x, y });
-                isDragging = false;
-            }
-        });
+      // draw the image as before:
+      const img = new Image();
+      img.onload = () => {
+        canvas.width  = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        ctx.drawImage(img, 0, 0);
+        coverResize();
+      };
+      img.src = 'data:image/jpeg;base64,' + base64;
+    });
+      socket.on('error', err => {
+        loadingUrl.textContent = 'Error';
+        loadingMessage.textContent = err;
+        loadingContainer.classList.remove('loading-active');
+      });
+    }
 
-        function resizeCanvas() {
-            if (!canvas.width || !canvas.height) return;
+    function startSession() {
+      if (!socket || !socket.connected) {
+        return alert('Connect first');
+      }
+      let url = document.getElementById('urlInput').value;
+      if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+      loadingUrl.textContent     = url;
+      loadingMessage.textContent = 'Loading... 0%';
+      loadingContainer.classList.add('loading-active');
+      socket.emit('startSession', { url });
 
-            const container = canvas.parentElement;
-            const containerWidth = container.clientWidth;
-            const containerHeight = container.clientHeight;
-            const canvasRatio = canvas.width / canvas.height;
+      let p = 0;
+      clearInterval(progressInterval);
+      progressInterval = setInterval(() => {
+        p = Math.min(99, p + 2);
+        loadingMessage.textContent = `Loading... ${p}%`;
+      }, 100);
+    }
 
-            let displayWidth = containerWidth;
-            let displayHeight = displayWidth / canvasRatio;
+    function coverResize() {
+      const cW = canvas.width, cH = canvas.height;
+      const vW = viewer.clientWidth, vH = viewer.clientHeight;
+      const s  = Math.max(vW / cW, vH / cH);
+      canvas.style.width  = `${cW * s}px`;
+      canvas.style.height = `${cH * s}px`;
+    }
 
-            if (displayHeight > containerHeight) {
-                document.getElementById('viewer').style.overflowY = 'auto';
-            } else {
-                document.getElementById('viewer').style.overflowY = 'hidden';
-            }
+    document.addEventListener('DOMContentLoaded', () => {
+      const hour = new Date().getHours();
+      if (hour >= 18 || hour <= 5) document.body.classList.add('night-mode');
 
-            canvas.style.width = `${displayWidth}px`;
-            canvas.style.height = `${displayHeight}px`;
+      window.serverHistory = new InputHistory('serverInput', 'srvHist');
+      window.urlHistory    = new InputHistory('urlInput', 'urlHist');
+
+      loadButton.addEventListener('click', () => {
+        serverHistory.add(document.getElementById('serverInput').value);
+        urlHistory.add(document.getElementById('urlInput').value);
+      });
+
+      const params = new URLSearchParams(location.search);
+      if (params.get('socket') && params.get('url')) {
+        // hide the controls bar entirely
+        document.getElementById('controls').style.display = 'none';
+        // shift loading content right
+        loadingContent.style.marginLeft = '100px';
+        // start auto‑connect & load
+        document.getElementById('serverInput').value = params.get('socket');
+        document.getElementById('urlInput').value    = params.get('url');
+        connectToServerAsync(params.get('socket'))
+          .then(startSession)
+          .catch(console.error);
+      }
+    });
+
+    // keep scroll & mouse handlers...
+    canvas.addEventListener('wheel', e => {
+      if (socket && socket.connected) {
+        e.preventDefault();
+        socket.emit('scroll', { deltaY: e.deltaY });
+      }
+    });
+    let isDrag=false, sx=0, sy=0;
+    ['mousedown','mousemove','mouseup'].forEach(evt => {
+      canvas.addEventListener(evt, e => {
+        if (!socket || !socket.connected) return;
+        const r = canvas.getBoundingClientRect();
+        const x = (e.clientX - r.left) * (canvas.width / r.width);
+        const y = (e.clientY - r.top ) * (canvas.height / r.height);
+        if (evt === 'mousedown') {
+          isDrag = false; sx = e.clientX; sy = e.clientY;
+          socket.emit('mousedown', { x, y });
+        } else if (evt === 'mousemove') {
+          if (Math.hypot(e.clientX - sx, e.clientY - sy) > 5) isDrag = true;
+          socket.emit('mousemove', { x, y, isDragging: isDrag });
+        } else {
+          if (!isDrag) socket.emit('click', { x, y });
+          socket.emit('mouseup', { x, y });
         }
-
-        window.addEventListener('resize', resizeCanvas);
-    </script>
+      });
+    });
+  </script>
 </body>
 </html>
